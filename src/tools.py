@@ -12,7 +12,13 @@ from langchain_core.tools import tool
 from src.config import REPO_PATH
 from src.vectorstore import CodebaseVectorStore
 
+
+import threading
+
+
 _vector_store: Optional[CodebaseVectorStore] = None
+_lock = threading.Lock()
+
 
 # Maximum lines read_file is allowed to return in a single call to protect token budget
 MAX_READ_LINES = 50
@@ -21,7 +27,9 @@ MAX_READ_LINES = 50
 def get_vector_store() -> CodebaseVectorStore:
     global _vector_store
     if _vector_store is None:
-        _vector_store = CodebaseVectorStore()
+        with _lock:
+            if _vector_store is None:
+                _vector_store = CodebaseVectorStore()
     return _vector_store
 
 
@@ -47,7 +55,8 @@ class SummarizeModuleInput(BaseModel):
 def search_code(query: str) -> str:
     """
     Semantic search over the indexed codebase.
-    Returns the top-3 matching code chunks with file paths and line ranges.
+    Returns the top matching code chunks with file paths, symbol names, and exact line ranges.
+    Inspect the returned code snippets to answer the question directly.
     """
     store = get_vector_store()
     results = store.search(query, top_k=2)
@@ -57,17 +66,15 @@ def search_code(query: str) -> str:
 
     output = []
     for i, res in enumerate(results, start=1):
-        # Truncate chunk content if exceedingly long
         content_lines = res["content"].splitlines()
-        truncated_content = "\n".join(content_lines[:35])
-        if len(content_lines) > 35:
-            truncated_content += "\n... [truncated for token brevity]"
+        # Return up to 50 lines so the model never needs to call read_file for small classes/functions
+        code_preview = "\n".join(content_lines[:50])
 
         output.append(
             f"--- Match {i} (Score: {res['score']}) ---\n"
             f"File: {res['file_path']} (Lines {res['start_line']}-{res['end_line']})\n"
             f"Symbol: {res['chunk_name']} ({res['chunk_type']})\n"
-            f"Code:\n{truncated_content}\n"
+            f"Code:\n{code_preview}\n"
         )
 
     return "\n".join(output)
@@ -76,8 +83,8 @@ def search_code(query: str) -> str:
 @tool(args_schema=ReadFileInput)
 def read_file(path: str, start_line: Optional[int] = 1, end_line: Optional[int] = None) -> str:
     """
-    Read targeted lines of a file by relative path.
-    Returns at most 80 lines per call to stay within token budgets.
+    Read the raw content of a file by relative path.
+    Use this ONLY when search_code does not provide sufficient context.
     """
     clean_path = path.strip().replace("\\", "/").lstrip("/")
     target_file = (REPO_PATH / clean_path).resolve()
@@ -95,21 +102,16 @@ def read_file(path: str, start_line: Optional[int] = 1, end_line: Optional[int] 
         total_lines = len(lines)
         s_line = max(1, start_line or 1)
         
-        # Enforce maximum 80 lines per call
-        requested_end = end_line if end_line is not None else (s_line + MAX_READ_LINES - 1)
-        e_line = min(total_lines, requested_end, s_line + MAX_READ_LINES - 1)
+        # If the file is small (<=80 lines), return the entire file in one shot
+        if total_lines <= 80:
+            numbered_lines = [f"{idx + 1}: {line}" for idx, line in enumerate(lines)]
+            return f"File: {clean_path} (Full File: Lines 1 to {total_lines})\n" + "".join(numbered_lines)
 
-        if s_line > total_lines:
-            return f"Error: start_line {s_line} exceeds total lines ({total_lines})."
-
+        e_line = min(total_lines, end_line or (s_line + 60))
         selected_lines = lines[s_line - 1 : e_line]
         numbered_lines = [f"{s_line + idx}: {line}" for idx, line in enumerate(selected_lines)]
 
-        header = f"File: {clean_path} (Lines {s_line} to {e_line} of {total_lines})\n"
-        if (e_line - s_line + 1) >= MAX_READ_LINES:
-            header += "[Note: Capped at 80 lines. Specify higher start_line for remaining code.]\n"
-
-        return header + "".join(numbered_lines)
+        return f"File: {clean_path} (Lines {s_line} to {e_line} of {total_lines})\n" + "".join(numbered_lines)
     except Exception as e:
         return f"Error reading file '{path}': {str(e)}"
 
