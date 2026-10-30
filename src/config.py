@@ -26,9 +26,8 @@ REPO_NAME = "requests"
 REPO_PATH = REPOS_DIR / REPO_NAME
 
 # LLM Configuration
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-# Using gemini-2.0-flash (fast, structured tool calling, generous free-tier limits)
-LLM_MODEL = "gemini-2.0-flash"
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+LLM_MODEL = "qwen/qwen3.8-27b"
 
 # Embedding Model Configuration
 # all-MiniLM-L6-v2 produces 384-dimensional vectors; fast on local CPU
