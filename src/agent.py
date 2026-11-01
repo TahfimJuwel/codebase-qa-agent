@@ -1,7 +1,8 @@
 """
 Module: agent.py
 Production-grade, low-latency Code Intelligence Agent.
-Guarantees clean Markdown synthesis with exact citations in under 3 seconds.
+Maintains a sliding conversational dialogue window and isolates per-turn
+tool evidence to ensure prompt sizes stay low.
 """
 
 from typing import Dict, Any, Generator
@@ -34,15 +35,29 @@ do NOT call any tool. Answer immediately stating clearly that it is out of scope
 SYNTHESIS_SYSTEM_PROMPT = """You are an expert software engineer explaining the codebases.
 Your goal is to answer the user's question thoroughly and accurately using ONLY the provided code evidence.
 
-RULES:
-1. Format your response cleanly using Markdown with headings, bullet points, and code blocks.
-2. ALWAYS cite the exact file paths and line ranges from the evidence, e.g., `[src/requests/adapters.py:307-363]`.
-3. Do NOT output any XML tags, <tool_call> tags, or function signatures. Write plain human-readable Markdown.
+STRICT FORMAT & LENGTH RULES:
+1. BREVITY CONSTRAINT: Your entire answer must be under 300 words. Be direct and avoid conversational filler or introductory fluff.
+2. MANDATORY TEMPLATE:
+   ### Summary
+   [Direct 2-3 sentence answer]
+
+   ### Key Implementation Points
+   - [Point 1: Concrete technical detail from code]
+   - [Point 2: Concrete technical detail from code]
+   - [Point 3: (Optional) Concrete technical detail from code]
+
+   ### Citations
+   - `[file_path:start_line-end_line]`
+
+3. COMPLETION GUARANTEE: You must finish every sentence and list item completely before reaching the end. Do not leave thoughts unfinished.
 """
 
 
 def call_decision_model(state: MessagesState):
-    """Decides which tool to call or answers directly if out of scope."""
+    """
+    Decides which tool to call using only clean conversational dialogue.
+    Strips old tool dumps from prior turns to keep tokens under 600.
+    """
     if not GROQ_API_KEY:
         raise ValueError("GROQ_API_KEY is not set.")
 
@@ -53,7 +68,19 @@ def call_decision_model(state: MessagesState):
         max_tokens=300,
     )
     llm_with_tools = llm.bind_tools(TOOLS)
-    messages = [SystemMessage(content=DECISION_SYSTEM_PROMPT)] + state["messages"]
+
+    # Extract only clean Human and Assistant dialogue (dropping past tool dumps)
+    clean_dialogue = []
+    for msg in state["messages"]:
+        if isinstance(msg, HumanMessage):
+            clean_dialogue.append(msg)
+        elif isinstance(msg, AIMessage) and not (hasattr(msg, "tool_calls") and msg.tool_calls):
+            clean_dialogue.append(msg)
+
+    # Keep a sliding window of the last 4 conversational messages
+    recent_dialogue = clean_dialogue[-4:] if len(clean_dialogue) > 4 else clean_dialogue
+
+    messages = [SystemMessage(content=DECISION_SYSTEM_PROMPT)] + recent_dialogue
     response = llm_with_tools.invoke(messages)
     return {"messages": [response]}
 
@@ -68,28 +95,31 @@ def should_continue(state: MessagesState) -> str:
 
 def synthesize_answer(state: MessagesState):
     """
-    Takes the retrieved tool evidence and writes a clean, cited Markdown response.
+    Takes the retrieved tool evidence for the CURRENT turn only and writes a cited Markdown answer.
     """
     llm = ChatGroq(
         model=LLM_MODEL,
         groq_api_key=GROQ_API_KEY,
         temperature=0.0,
-        max_tokens=650,
+        max_tokens=700,
     )
 
-    # Extract user query
+    # 1. Identify the current turn's HumanMessage
     user_query = ""
-    for msg in state["messages"]:
+    last_human_idx = -1
+    for idx, msg in enumerate(state["messages"]):
         if isinstance(msg, HumanMessage):
             user_query = msg.content
+            last_human_idx = idx
 
-    # Extract all tool observation contents
-    tool_evidences = []
-    for msg in state["messages"]:
-        if isinstance(msg, ToolMessage):
-            tool_evidences.append(str(msg.content))
+    # 2. Extract ONLY the ToolMessages produced during this CURRENT turn
+    current_turn_evidence = []
+    if last_human_idx != -1:
+        for msg in state["messages"][last_human_idx:]:
+            if isinstance(msg, ToolMessage):
+                current_turn_evidence.append(str(msg.content))
 
-    evidence_text = "\n\n".join(tool_evidences)
+    evidence_text = "\n\n".join(current_turn_evidence)
 
     synthesis_prompt = f"""User Question:
 {user_query}
@@ -113,18 +143,15 @@ def get_agent_executor():
     """Compiles the custom LangGraph state machine with memory."""
     workflow = StateGraph(MessagesState)
 
-    # 1. Add Nodes
     workflow.add_node("agent", call_decision_model)
     workflow.add_node("tools", ToolNode(TOOLS))
     workflow.add_node("synthesize", synthesize_answer)
 
-    # 2. Add Edges
     workflow.add_edge(START, "agent")
     workflow.add_conditional_edges("agent", should_continue, ["tools", END])
     workflow.add_edge("tools", "synthesize")
     workflow.add_edge("synthesize", END)
 
-    # 3. Attach in-memory checkpointer
     memory = MemorySaver()
     app = workflow.compile(checkpointer=memory)
     return app
