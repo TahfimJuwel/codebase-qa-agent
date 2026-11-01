@@ -14,7 +14,11 @@ from langgraph.checkpoint.memory import MemorySaver
 from src.config import GROQ_API_KEY, LLM_MODEL
 from src.tools import TOOLS
 
-DECISION_SYSTEM_PROMPT = """You are an expert Code Intelligence AI Agent analyzing the public GitHub repository 'psf/requests'.
+DECISION_SYSTEM_PROMPT = """You are an expert Code Intelligence AI Agent analyzing the repository currently configured in the application.
+
+Your task is to understand the repository and answer user questions using the available tools.
+
+Always rely on the actual repository files and tool results rather than making assumptions about its structure, programming language, or functionality.
 
 Your task is to analyze the user's question and invoke the appropriate tool:
 - `search_code`: For semantic retrieval of classes, functions, methods, or architectural concepts.
@@ -27,7 +31,7 @@ If the user asks about something completely unrelated to this codebase (e.g. blo
 do NOT call any tool. Answer immediately stating clearly that it is out of scope.
 """
 
-SYNTHESIS_SYSTEM_PROMPT = """You are an expert software engineer explaining the 'psf/requests' codebase.
+SYNTHESIS_SYSTEM_PROMPT = """You are an expert software engineer explaining the codebases.
 Your goal is to answer the user's question thoroughly and accurately using ONLY the provided code evidence.
 
 RULES:

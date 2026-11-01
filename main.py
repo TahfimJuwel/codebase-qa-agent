@@ -33,7 +33,7 @@ def run_interactive_session():
     """Runs the interactive multi-turn conversation loop."""
     print_banner()
 
-    with console.status("[bold green]Initializing Agent and Vector Index..."):
+    with console.status("[bold green]Initializing Agent..."):
         try:
             agent = get_agent_executor()
         except Exception as e:
