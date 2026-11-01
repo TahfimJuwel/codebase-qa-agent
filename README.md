@@ -1,13 +1,13 @@
 # 🤖 Autonomous Codebase Intelligence Q&A System
 
-An agentic codebase question-answering system built with **LangGraph**, **Qdrant**, and **Sentence-Transformers**. It performs syntax-preserving AST code extraction, dense semantic vector retrieval, and autonomous multi-tool reasoning over real-world codebases (`psf/requests`), delivering sub-3-second responses with exact file and line-number citations.
+An agentic codebase question-answering system built with **LangGraph**, **Qdrant**, and **Sentence-Transformers**. It performs syntax-preserving AST code extraction, dense semantic vector retrieval, and autonomous multi-tool reasoning over real-world codebases, delivering responses with exact file and line-number citations.
 
 ---
 
-## 🎯 Target Repository
-- **Target Repository:** [`psf/requests`](https://github.com/psf/requests)
+## 🎯 Target Repository Language
+
 - **Repository Language:** Python
-- **Key Modules Analyzed:** Transport Adapters (`HTTPAdapter`), connection pooling (`urllib3`), SSL/TLS verification hierarchies, session configurations, and request lifecycles.
+- **Key Modules Analyzed:** Transport Adapters (`HTTPAdapter`), connection pooling (`urllib3`), SSL/TLS
 
 ---
 
@@ -16,25 +16,25 @@ An agentic codebase question-answering system built with **LangGraph**, **Qdrant
 ```mermaid
 flowchart TD
     User(["👤 User Natural Language Query"]) --> Engine["🧠 LangGraph Custom State Machine\n(In-Memory MemorySaver)"]
-    
+
     Engine --> Check{Query Type?}
-    
+
     Check -- Out of Scope --> Refusal["🛑 Immediate Safe Refusal\n(Zero Token Waste)"]
     Check -- Technical Query --> Router["⚙️ Autonomous Router\n(Model Selects Best Tool)"]
-    
+
     Router --> T1["🔍 search_code"]
     Router --> T2["📄 read_file"]
     Router --> T3["📁 list_directory"]
     Router --> T4["📋 summarize_module"]
-    
+
     T1 --> Qdrant[("💾 Embedded Qdrant Index\nAST Chunks + Exact Line Metadata")]
     T2 --> Disk[("📂 Cloned Target Codebase\nSandboxed Local Repo")]
     T3 --> Disk
     T4 --> Disk
-    
+
     Qdrant --> Synth["📝 Deterministic Synthesis Node\n(Validates Evidence & Injects Citations)"]
     Disk --> Synth
-    
+
     Synth --> Output(["🖥️ Rich CLI Streaming Output\n[file_path:start_line-end_line]"])
 ```
 
@@ -64,20 +64,43 @@ flowchart TD
 
 ---
 
+## Screenshots
+
+### 1. Application Interface
+
+![Application Interface](<screenshots/QA System.png>)
+
+### 2. Code Search
+
+![Code Search](<screenshots/Question 1 related to the repository.png>)
+
+### 3. Follow-up Question
+
+![Follow-up Question](<screenshots/Followup question .png>)
+
+### 4. Out-of-Scope Question
+
+![Out-of-Scope Question](<screenshots/Question out of this repository.png>)
+
+---
+
 ## 🚀 Setup & Installation
 
 ### 1. Prerequisites
+
 - Python 3.10+
 - Git installed on your system
 - An API key from [Groq Console](https://console.groq.com/) (Free tier, zero billing required)
 
 ### 2. Clone the Repository
+
 ```bash
 git clone <YOUR_PRIVATE_REPO_URL>
 cd codebase-qa-agent
 ```
 
 ### 3. Create and Activate Virtual Environment
+
 ```bash
 python -m venv venv
 # On Windows (PowerShell):
@@ -87,28 +110,35 @@ source venv/bin/activate
 ```
 
 ### 4. Install Dependencies
+
 ```bash
 pip install -r requirements.txt
 ```
 
 ### 5. Configure Environment Variables
+
 Create a `.env` file in the root directory:
+
 ```env
 GROQ_API_KEY="gsk_your_groq_api_key_here"
 ```
 
 ### 6. One-Time Codebase Indexing
+
 To clone and index the repository into your local vector database:
+
 ```bash
 python -m src.vectorstore
 ```
-*(Takes ~30 seconds to parse 81 files into 786 AST chunks and store them in `./data/vector_db`.)*
+
+_(Takes ~30 seconds to parse 81 files into 786 AST chunks and store them in `./data/vector_db`.)_
 
 ---
 
 ## 💻 Usage
 
 Run the conversational terminal interface:
+
 ```bash
 python main.py
 ```
@@ -116,5 +146,6 @@ python main.py
 ---
 
 ## 🛡️ Rules, Integrity & AI Disclosure
+
 - **AI Tool Usage:** AI assistants (Chatgpt and Gemini) was utilized as an interactive co-pilot during development for debugging upstream LangChain API changes, resolving rate limits, and designing LangGraph state machine topologies. Also public github repositories was used as references to modify the task.
 - All code chunking logic (`src/parser.py`), path traversal security guards (`src/tools.py`), and LangGraph cycle orchestration (`src/agent.py`) were written, reviewed, and verified manually.
